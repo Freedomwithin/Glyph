@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Glyph Settings",
+  "type": "object",
+  "properties": {
+    "font_size": {
+      "type": "integer",
+      "minimum": 8,
+      "maximum": 72,
+      "default": 14
+    },
+    "tab_size": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 8,
+      "default": 4
+    },
+    "word_wrap": {
+      "type": "boolean",
+      "default": true
+    },
+    "theme": {
+      "type": "string",
+      "enum": ["Sovereign Night", "Indigo Bloom", "Neural Sentinel"],
+      "default": "Sovereign Night"
+    }
+  }
+}

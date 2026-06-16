@@ -1,0 +1,533 @@
+import { VerticalBox, HorizontalBox, ScrollView, Button, CheckBox, SpinBox, LineEdit, ComboBox } from "std-widgets.slint";
+
+export struct FileEntry {
+    name: string, is_dir: bool, path: string,
+}
+
+export struct TabEntry {
+    name: string, active: bool,
+}
+
+export struct SearchResult {
+    file_path: string, line_number: int, text: string,
+}
+
+export component AppWindow inherits Window {
+    preferred-width: 1200px;
+    preferred-height: 800px;
+    title: "⬡ GLYPH";
+    background: #0f172a;
+    no-frame: false; // Native OS chrome for 100% stable Cinnamon sync
+
+    callback key_pressed(string, string, bool, bool);
+    callback mouse_pressed(length, length);
+    callback mouse_dragged(length, length);
+    callback mouse_wheel(length, length);
+    callback settings_changed(int, bool, string);
+    callback save_triggered();
+    callback open_triggered();
+    callback new_tab_triggered();
+    callback file_selected(string);
+    callback tab_selected(int);
+    callback tab_closed(int);
+    callback search_triggered(string);
+    callback search_result_selected(string, int);
+    callback canvas_resized(length, length);
+    callback menu_action(string);
+
+    in-out property <string> buffer_text: "";
+    in property <[string]> line_numbers: ["1"];
+    in-out property <int> font_size: 14;
+    in-out property <string> font_family: "DejaVu Sans Mono";
+    in-out property <bool> use_word_wrap: false;
+    in-out property <bool> show_settings: false;
+    in-out property <bool> show_search: false;
+    in-out property <int> scroll_offset: 0;
+    
+    in-out property <bool> is_maximized: false;
+
+    // Menu States
+    in-out property <bool> show_file_menu: false;
+    in-out property <bool> show_edit_menu: false;
+
+    // Live canvas geometry for Rust polling
+    out property <length> canvas-width: canvas_rect.width;
+    out property <length> canvas-height: canvas_rect.height;
+
+    // The pixel-painted image from Rust
+    in property <image> editor_image;
+
+    // Project Hub Properties
+    in property <[FileEntry]> file_tree: [];
+    in property <string> project_root: "";
+    in property <[TabEntry]> tabs: [];
+    in-out property <int> active_tab_idx: 0;
+
+    // Search Properties
+    in property <[SearchResult]> search_results: [];
+
+    // Internal state for status bar
+    in-out property <string> status_text: "Ln 1, Col 1";
+
+    VerticalBox {
+        padding: 0;
+        spacing: 0;
+
+        // ── High-Visibility Top Bar ────────────────────────────────────
+        Rectangle {
+            height: 38px;
+            background: #1e293b;
+            Rectangle { y: parent.height - 1px; height: 1px; background: #334155; width: parent.width; }
+
+            HorizontalLayout {
+                padding-left: 12px;
+                padding-right: 12px;
+                spacing: 4px;
+                alignment: start;
+                
+                // Logo & Title Group
+                HorizontalLayout {
+                    spacing: 8px;
+                    padding-right: 16px;
+                    Rectangle {
+                        width: 14px; height: 14px;
+                        background: #38bdf8;
+                        border-radius: 2px;
+                        y: (parent.height - 14px) / 2;
+                    }
+                    Text { 
+                        text: "GLYPH"; 
+                        color: #f1f5f9; 
+                        font-size: 13px; 
+                        font-weight: 800; 
+                        letter-spacing: 1.5px; 
+                        vertical-alignment: center; 
+                    }
+                }
+
+                // File Menu Button
+                Rectangle {
+                    width: 64px; height: 28px;
+                    y: (parent.height - 28px) / 2;
+                    background: ta_file.has-hover || root.show_file_menu ? #334155 : transparent;
+                    border-radius: 4px;
+                    ta_file := TouchArea { clicked => { root.show_file_menu = !root.show_file_menu; root.show_edit_menu = false; } }
+                    Text { 
+                        text: "File"; 
+                        color: root.show_file_menu ? #38bdf8 : #cbd5e1; 
+                        font-size: 13px; 
+                        horizontal-alignment: center; 
+                        vertical-alignment: center; 
+                    }
+                }
+
+                // Edit Menu Button
+                Rectangle {
+                    width: 64px; height: 28px;
+                    y: (parent.height - 28px) / 2;
+                    background: ta_edit.has-hover || root.show_edit_menu ? #334155 : transparent;
+                    border-radius: 4px;
+                    ta_edit := TouchArea { clicked => { root.show_edit_menu = !root.show_edit_menu; root.show_file_menu = false; } }
+                    Text { 
+                        text: "Edit"; 
+                        color: root.show_edit_menu ? #38bdf8 : #cbd5e1; 
+                        font-size: 13px; 
+                        horizontal-alignment: center; 
+                        vertical-alignment: center; 
+                    }
+                }
+
+                // Selection & View labels (Placeholder)
+                Text { text: "Selection"; color: #475569; font-size: 13px; vertical-alignment: center; padding-left: 12px; }
+                Text { text: "View"; color: #475569; font-size: 13px; vertical-alignment: center; padding-left: 12px; }
+            }
+        }
+
+        HorizontalBox {
+            padding: 0;
+            spacing: 0;
+
+            // Sidebar
+            Rectangle {
+                width: 260px;
+                background: #1e293b;
+                Rectangle { x: parent.width - 1px; width: 1px; background: #334155; }
+
+                VerticalBox {
+                    alignment: start;
+                    padding: 10px;
+                    spacing: 12px;
+
+                    HorizontalBox {
+                        alignment: space-between;
+                        Text { text: "PROJECT HUB"; color: #94a3b8; font-size: 11px; font-weight: 700; letter-spacing: 1px; }
+                        HorizontalBox {
+                            spacing: 4px;
+                            Button {
+                                text: "+";
+                                width: 28px;
+                                clicked => { new_tab_triggered(); }
+                            }
+                            Button {
+                                text: show_search ? "Files" : "Search";
+                                clicked => { show_search = !show_search; }
+                            }
+                        }
+                    }
+
+                    search_input := LineEdit {
+                        visible: show_search;
+                        height: show_search ? 32px : 0px;
+                        placeholder-text: "Search project...";
+                        accepted(text) => { search_triggered(text); }
+                    }
+
+                    if (!show_search) : ScrollView {
+                        VerticalBox {
+                            alignment: start;
+                            spacing: 2px;
+                            for entry[i] in file_tree : Rectangle {
+                                height: 26px;
+                                background: ta_sidebar.has-hover ? #334155 : transparent;
+                                border-radius: 4px;
+                                ta_sidebar := TouchArea {
+                                    clicked => { file_selected(entry.path); }
+                                }
+                                HorizontalLayout {
+                                    padding-left: 8px;
+                                    spacing: 8px;
+                                    Text {
+                                        text: entry.is_dir ? "📁" : "📄";
+                                        font-size: 12px;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: entry.name;
+                                        color: entry.is_dir ? #cbd5e1 : #38bdf8;
+                                        font-size: 13px;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (show_search) : ScrollView {
+                        VerticalBox {
+                            alignment: start;
+                            spacing: 2px;
+                            for result[i] in search_results : Rectangle {
+                                height: 38px;
+                                background: ta_result.has-hover ? #334155 : transparent;
+                                ta_result := TouchArea {
+                                    clicked => { search_result_selected(result.file_path, result.line_number); }
+                                }
+                                VerticalBox {
+                                    padding-left: 6px;
+                                    spacing: 0px;
+                                    Text {
+                                        text: result.file_path + ":" + result.line_number;
+                                        color: #38bdf8;
+                                        font-size: 11px;
+                                        overflow: elide;
+                                    }
+                                    Text {
+                                        text: result.text;
+                                        color: #94a3b8;
+                                        font-size: 11px;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle { height: 1px; background: #334155; }
+                    Button { text: "Settings"; clicked => { show_settings = !show_settings; } }
+                }
+            }
+
+            // Right Workspace area
+            Rectangle {
+                background: #0f172a;
+                horizontal-stretch: 1;
+                vertical-stretch: 1;
+
+                VerticalBox {
+                    padding: 0;
+                    spacing: 0;
+
+                    // Tab Bar
+                    Rectangle {
+                        height: 36px;
+                        background: #0f172a;
+                        Rectangle { y: parent.height - 1px; height: 1px; background: #1e293b; width: parent.width; }
+
+                        HorizontalBox {
+                            padding: 0;
+                            spacing: 0;
+                            alignment: start;
+                            for tab[i] in tabs : Rectangle {
+                                width: 140px;
+                                height: 36px;
+                                background: tab.active ? #1e293b : transparent;
+                                Rectangle { x: parent.width - 1px; width: 1px; background: #1e293b; }
+                                HorizontalBox {
+                                    padding-left: 12px;
+                                    padding-right: 4px;
+                                    spacing: 4px;
+                                    alignment: space-between;
+                                    Text {
+                                        text: tab.name;
+                                        color: tab.active ? #f1f5f9 : #64748b;
+                                        font-size: 13px;
+                                        overflow: elide;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                        TouchArea { clicked => { tab_selected(i); } }
+                                    }
+                                    Rectangle {
+                                        width: 20px; height: 20px;
+                                        background: ta_close.has-hover ? #334155 : transparent;
+                                        border-radius: 3px;
+                                        ta_close := TouchArea {
+                                            clicked => { tab_closed(i); }
+                                        }
+                                        Text {
+                                            text: "×";
+                                            color: ta_close.has-hover ? #f87171 : #64748b;
+                                            font-size: 14px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+                                    }
+                                }
+                                if (tab.active) : Rectangle {
+                                    y: parent.height - 2px; height: 2px; background: #38bdf8;
+                                }
+                            }
+                        }
+                    }
+
+                    // Main editor area
+                    Rectangle {
+                        background: #0f172a;
+                        horizontal-stretch: 1;
+                        vertical-stretch: 1;
+
+                        HorizontalBox {
+                            padding: 0;
+                            spacing: 0;
+
+                            // Line number gutter
+                            Rectangle {
+                                width: 44px;
+                                background: #0b1120;
+                                Rectangle { x: parent.width - 1px; width: 1px; background: #1e2d40; }
+                                VerticalBox {
+                                    alignment: start;
+                                    padding-top: 10px;
+                                    padding-right: 6px;
+                                    spacing: 0;
+                                    for num in line_numbers : Text {
+                                        text: num;
+                                        color: #3d5166;
+                                        font-family: font_family;
+                                        font-size: font_size * 1px;
+                                        horizontal-alignment: right;
+                                        height: font_size * 1.3px;
+                                    }
+                                }
+                            }
+
+                            // Canvas area
+                            canvas_rect := Rectangle {
+                                horizontal-stretch: 1;
+                                vertical-stretch: 1;
+                                clip: true;
+                                background: #0f172a;
+
+                                fs := FocusScope {
+                                    x: 0; y: 0;
+                                    width: parent.width;
+                                    height: parent.height;
+
+                                    key-pressed(event) => {
+                                        if (event.modifiers.control && (event.text == "s" || event.text == "\u{13}")) { save_triggered(); }
+                                        else if (event.modifiers.control && (event.text == "o" || event.text == "\u{0F}")) { open_triggered(); }
+                                        else if (event.modifiers.control && (event.text == "n" || event.text == "\u{0E}")) { new_tab_triggered(); }
+                                        else if (event.modifiers.control && (event.text == "t" || event.text == "\u{14}")) { new_tab_triggered(); }
+                                        else if (event.modifiers.control && (event.text == "w" || event.text == "\u{17}")) { tab_closed(active_tab_idx); }
+                                        else if (event.modifiers.control && (event.text == "f" || event.text == "\u{06}")) { show_search = true; search_input.focus(); }
+                                        else if (event.text == Key.LeftArrow)  { key_pressed("", "Left",  event.modifiers.control, event.modifiers.shift); }
+                                        else if (event.text == Key.RightArrow) { key_pressed("", "Right", event.modifiers.control, event.modifiers.shift); }
+                                        else if (event.text == Key.UpArrow)    { key_pressed("", "Up",    event.modifiers.control, event.modifiers.shift); }
+                                        else if (event.text == Key.DownArrow)  { key_pressed("", "Down",  event.modifiers.control, event.modifiers.shift); }
+                                        else if (event.text == Key.Home) { key_pressed("", "Home", event.modifiers.control, event.modifiers.shift); }
+                                        else if (event.text == Key.End)  { key_pressed("", "End",  event.modifiers.control, event.modifiers.shift); }
+                                        else { key_pressed(event.text, "", event.modifiers.control, event.modifiers.shift); }
+                                        accept
+                                    }
+
+                                    ta_main := TouchArea {
+                                        width: 100%; height: 100%;
+                                        pointer-event(event) => {
+                                            if (event.button == PointerEventButton.left && event.kind == PointerEventKind.down) {
+                                                fs.focus();
+                                                mouse_pressed(self.pressed-x, self.pressed-y);
+                                            }
+                                        }
+                                        moved => {
+                                            if (self.pressed) { mouse_dragged(self.mouse-x, self.mouse-y); }
+                                        }
+                                        scroll-event(event) => {
+                                            mouse_wheel(event.delta-x, event.delta-y);
+                                            accept
+                                        }
+                                    }
+
+                                    Image {
+                                        x: 0; y: 0;
+                                        width: parent.width;
+                                        height: parent.height;
+                                        source: editor_image;
+                                        image-rendering: smooth;
+                                    }
+                                    
+                                    // Visual Scrollbar Overlay
+                                    Rectangle {
+                                        x: parent.width - 4px;
+                                        y: (scroll_offset * parent.height / max(1, line_numbers.length));
+                                        width: 3px;
+                                        height: max(20px, (parent.height / max(1px, (line_numbers.length * font_size * 1.3px))) * parent.height);
+                                        background: #38bdf8;
+                                        opacity: 0.4;
+                                        border-radius: 2px;
+                                    }
+                                }
+
+                                init => {
+                                    fs.focus();
+                                    canvas_resized(self.width, self.height);
+                                }
+                            }
+                        }
+
+                        if (show_settings) : Rectangle {
+                            background: #1e293b;
+                            width: 320px;
+                            height: 300px;
+                            x: parent.width - 340px;
+                            y: 10px;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #334155;
+                            VerticalBox {
+                                padding: 20px;
+                                spacing: 14px;
+                                Text { text: "Glyph Settings"; color: #f1f5f9; font-size: 16px; font-weight: 700; }
+                                HorizontalBox {
+                                    spacing: 10px;
+                                    Text { text: "Font Size:"; color: #94a3b8; vertical-alignment: center; }
+                                    SpinBox {
+                                        value: font_size;
+                                        minimum: 8;
+                                        maximum: 72;
+                                        edited(val) => { font_size = val; settings_changed(font_size, use_word_wrap, font_family); }
+                                    }
+                                }
+                                HorizontalBox {
+                                    spacing: 10px;
+                                    Text { text: "Word Wrap:"; color: #94a3b8; vertical-alignment: center; }
+                                    CheckBox {
+                                        checked: use_word_wrap;
+                                        toggled => { use_word_wrap = !use_word_wrap; settings_changed(font_size, use_word_wrap, font_family); }
+                                    }
+                                }
+                                HorizontalBox {
+                                    spacing: 10px;
+                                    Text { text: "Font Family:"; color: #94a3b8; vertical-alignment: center; }
+                                    ComboBox {
+                                        model: ["DejaVu Sans Mono", "Fira Code", "JetBrains Mono", "Hack", "Source Code Pro", "Inconsolata", "Cascadia Code", "IBM Plex Mono", "Courier Prime", "Ubuntu Mono", "Comic Mono", "monospace"];
+                                        current-value: font_family;
+                                        selected(val) => {
+                                            font_family = val;
+                                            settings_changed(font_size, use_word_wrap, font_family);
+                                        }
+                                    }
+                                }
+                                Button { text: "Close"; clicked => { show_settings = false; } }
+                            }
+                        }
+
+                        // ── File Menu Overlay ──────────────────────────
+                        if (root.show_file_menu) : Rectangle {
+                            background: #1e293b;
+                            width: 220px;
+                            height: 160px;
+                            x: 100px; // Aligned with the button
+                            y: 0px;
+                            border-radius: 4px;
+                            border-width: 1px;
+                            border-color: #334155;
+                            VerticalBox {
+                                padding: 10px;
+                                spacing: 6px;
+                                Button { text: "New File         Ctrl+N"; clicked => { root.show_file_menu = false; new_tab_triggered(); } }
+                                Button { text: "Open File...     Ctrl+O"; clicked => { root.show_file_menu = false; open_triggered(); } }
+                                Button { text: "Save             Ctrl+S"; clicked => { root.show_file_menu = false; save_triggered(); } }
+                                Rectangle { height: 1px; background: #334155; }
+                                Button { text: "Exit"; clicked => { menu_action("exit"); } }
+                            }
+                        }
+
+                        // ── Edit Menu Overlay ──────────────────────────
+                        if (root.show_edit_menu) : Rectangle {
+                            background: #1e293b;
+                            width: 220px;
+                            height: 200px;
+                            x: 168px; // Aligned with Edit button
+                            y: 0px;
+                            border-radius: 4px;
+                            border-width: 1px;
+                            border-color: #334155;
+                            VerticalBox {
+                                padding: 10px;
+                                spacing: 6px;
+                                Button { text: "Undo             Ctrl+Z"; clicked => { root.show_edit_menu = false; key_pressed("z", "", true, false); } }
+                                Button { text: "Redo             Ctrl+Y"; clicked => { root.show_edit_menu = false; key_pressed("y", "", true, false); } }
+                                Rectangle { height: 1px; background: #334155; }
+                                Button { text: "Cut              Ctrl+X"; clicked => { root.show_edit_menu = false; key_pressed("x", "", true, false); } }
+                                Button { text: "Copy             Ctrl+C"; clicked => { root.show_edit_menu = false; key_pressed("c", "", true, false); } }
+                                Button { text: "Paste            Ctrl+V"; clicked => { root.show_edit_menu = false; key_pressed("v", "", true, false); } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Status Bar
+        Rectangle {
+            height: 24px;
+            background: #0d1b2e;
+            Rectangle { y: 0; height: 1px; background: #1e3a5f; width: parent.width; }
+            HorizontalBox {
+                padding-left: 12px;
+                padding-right: 12px;
+                alignment: space-between;
+                Text { text: status_text; color: #64a4d8; font-size: 11px; vertical-alignment: center; }
+                Text { text: "Project: " + root.project_root; color: #334155; font-size: 10px; vertical-alignment: center; overflow: elide; }
+                Text { text: "Rust · Sovereign Skia"; color: #334155; font-size: 11px; vertical-alignment: center; }
+            }
+        }
+    }
+    
+    // Allow closing menus when clicking outside
+    TouchArea {
+        width: parent.width; height: parent.height;
+        z: -1;
+        clicked => { root.show_file_menu = false; root.show_edit_menu = false; }
+    }
+}

@@ -1,0 +1,46 @@
+# Glyph-specific ignores
+target/
+debug/
+settings.json
+*.log
+**/*.bak
+*.orig
+.DS_Store
+.vscode/
+
+# Dependency caches
+# Cargo
+Cargo.lock
+# Rust-analyzer
+.rust-analyzer/
+
+# OS Specific
+.lock-waf_
+.waf-*-lock
+.idea/
+*.swp
+*~
+.#*
+.#*#
+*.iml
+
+# Node.js (if any future integration)
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Python (if any future integration)
+__pycache__/
+*.pyc
+.venv/
+venv/
+.Python
+.mypy_cache/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+ehthumbs.db
