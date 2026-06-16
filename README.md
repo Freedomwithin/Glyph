@@ -1,51 +1,53 @@
-# ⬡ GLYPH — The Sovereign Text Editor
+# GLYPH - High-Performance Text Editor
 
-**"A high-performance sanctuary for the modern architect."**
+GLYPH is a high-performance, minimalist text editor developed in Rust. It utilizes a custom rendering engine to provide a zero-latency development environment, bypassing the overhead associated with Electron-based editors.
 
-Glyph is a blazingly fast, minimalist text editor built from the ground up in Rust. It bypasses the bloat of Electron-based editors by utilizing a custom **Sovereign Skia Rendering Engine**, delivering zero-latency feedback and architectural clarity.
+## Technical Architecture
 
-## 🏛️ Why Glyph Wins: The Architecture
+### Sovereign Skia Rendering Engine
+Powered by tiny-skia and cosmic-text, GLYPH renders text directly to a pixel buffer. This architecture ensures consistent 60fps performance and avoids the layout complexities of standard UI frameworks.
 
-### ⚡ Sovereign Skia Engine
-Powered by `tiny-skia` and `cosmic-text`, Glyph paints every pixel directly to the canvas. By bypassing standard UI layout engines for text rendering, we achieve a consistent 60fps experience even on modest hardware. We don't just display text; we paint it with intent.
+### Unicode Piece Table Buffer
+The core data structure is a character-indexed Piece Table. This ensures O(1) edits and complete Unicode safety, preventing data corruption when handling multi-byte characters or complex international scripts.
 
-### 🛡️ Unicode Absolute Integrity
-Architecture built on a character-indexed **Piece Table** buffer. Unlike editors that struggle with multi-byte text, Glyph handles emojis, complex symbols, and international scripts with 100% safety and zero memory drift. Your data is immutable and your edits are atomic.
+### Project Navigation and Search
+Integrated project-wide search is optimized for speed, allowing for rapid navigation through large codebases with minimal resource consumption.
 
-### 🧭 Sovereign Search (Ripgrep DNA)
-Integrated project-wide navigation powered by high-performance engines. Slice through thousands of files in milliseconds and jump to any line instantly.
+## Features
 
-## 🛠️ Pro-Utility Features
+- Multi-tab management for concurrent project handling.
+- 100-step persistent Undo/Redo history.
+- Tree-sitter powered syntax highlighting with the Sovereign Night palette.
+- Dynamic font selection supporting professional monospace families (Fira Code, JetBrains Mono, Hack, etc.).
+- Native OS window management for stable integration with desktop environments.
+- Native file dialogs for standard system interoperability.
 
-- **Multi-Tab Project Hub:** Handle multiple strikes simultaneously with independent buffers and history.
-- **Undo/Redo (100-step):** Deep temporal mastery with a robust history stack.
-- **Sovereign Night Palette:** Custom Tree-sitter syntax highlighting designed for deep work.
-- **Font Mastery:** Instantly switch between professional monospace stacks (DejaVu, Fira Code, JetBrains Mono, Hack, and more).
-- **Native OS Sync:** Utilizing native window decorations for 100% stable resizing and workspace integration.
+## Keybindings
 
-## ⌨️ Sovereign Keybindings
-
-| Command | Binding |
+| Action | Command |
 |---|---|
-| New Tab | `Ctrl + N` / `Ctrl + T` |
-| Close Tab | `Ctrl + W` |
-| Save File | `Ctrl + S` |
-| Open File | `Ctrl + O` |
-| Search Project | `Ctrl + F` |
-| Select All | `Ctrl + A` |
-| Undo / Redo | `Ctrl + Z` / `Ctrl + Y` |
+| New Tab | Ctrl + N / Ctrl + T |
+| Close Tab | Ctrl + W |
+| Save File | Ctrl + S |
+| Open File | Ctrl + O |
+| Search Project | Ctrl + F |
+| Select All | Ctrl + A |
+| Undo / Redo | Ctrl + Z / Ctrl + Y |
 
-## 🏁 Ignition Guide
-Ensure your forge has the necessary Linux dependencies:
+## Installation
+
+### Prerequisites (Linux)
+Ensure the following system dependencies are installed:
 ```bash
 sudo apt install build-essential libfontconfig1-dev libx11-dev libwayland-dev libxkbcommon-dev libgles2-mesa-dev
 ```
 
-Launch the forge:
+### Build from Source
 ```bash
-cd Development/Text-Editor-Build
-cargo run --release
+git clone https://github.com/[your-repo]/glyph.git
+cd glyph
+cargo build --release
 ```
 
-## 📜 Strategic Note
-Glyph is more than an editor; it is a statement of sovereignty. Every millisecond of latency we kill is time returned to the creator. Built in duet by Jonathon and Maya.
+## Strategy and Vision
+GLYPH is designed for developers who prioritize efficiency and architectural integrity. By minimizing latency and maximizing resource control, it serves as a robust tool for professional software engineering. Developed by Jonathon and Maya.
