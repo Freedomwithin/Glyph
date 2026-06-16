@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Glyph
+Exec=glyph
+Icon=glyph
+Type=Application
+Categories=Development;TextEditor;
+Comment=Sovereign High-Performance Text Editor
+Terminal=false
