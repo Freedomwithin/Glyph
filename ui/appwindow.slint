@@ -16,14 +16,14 @@ export component AppWindow inherits Window {
     preferred-width: 1200px;
     preferred-height: 800px;
     title: "⬡ GLYPH";
-    background: #0f172a;
+    background: editor_background;
     no-frame: false; // Native OS chrome for 100% stable Cinnamon sync
 
     callback key_pressed(string, string, bool, bool);
     callback mouse_pressed(length, length);
     callback mouse_dragged(length, length);
     callback mouse_wheel(length, length);
-    callback settings_changed(int, bool, string);
+    callback settings_changed(int, bool, string, string, string);
     callback save_triggered();
     callback open_triggered();
     callback new_tab_triggered();
@@ -34,6 +34,7 @@ export component AppWindow inherits Window {
     callback search_result_selected(string, int);
     callback canvas_resized(length, length);
     callback menu_action(string);
+    callback validate_license(string) -> bool;
 
     in-out property <string> buffer_text: "";
     in property <[string]> line_numbers: ["1"];
@@ -43,6 +44,17 @@ export component AppWindow inherits Window {
     in-out property <bool> show_settings: false;
     in-out property <bool> show_search: false;
     in-out property <int> scroll_offset: 0;
+
+    in-out property <string> license_type: "Core";
+    in-out property <string> license_key: "";
+    in-out property <string> current_theme: "Sovereign Slate";
+    in-out property <bool> show_license_dialog: false;
+    in-out property <string> license_input_text: "";
+    in-out property <string> license_error: "";
+    in-out property <brush> editor_background: 
+        current_theme == "Sovereign Night" ? #05070f :
+        current_theme == "Temple" ? #1c1917 :
+        #0f172a; // Sovereign Slate (Default)
     
     in-out property <bool> is_maximized: false;
 
@@ -250,7 +262,7 @@ export component AppWindow inherits Window {
 
             // Right Workspace area
             Rectangle {
-                background: #0f172a;
+                background: editor_background;
                 horizontal-stretch: 1;
                 vertical-stretch: 1;
 
@@ -261,7 +273,7 @@ export component AppWindow inherits Window {
                     // Tab Bar
                     Rectangle {
                         height: 36px;
-                        background: #0f172a;
+                        background: editor_background;
                         Rectangle { y: parent.height - 1px; height: 1px; background: #1e293b; width: parent.width; }
 
                         HorizontalBox {
@@ -312,7 +324,7 @@ export component AppWindow inherits Window {
 
                     // Main editor area
                     Rectangle {
-                        background: #0f172a;
+                        background: editor_background;
                         horizontal-stretch: 1;
                         vertical-stretch: 1;
 
@@ -346,7 +358,7 @@ export component AppWindow inherits Window {
                                 horizontal-stretch: 1;
                                 vertical-stretch: 1;
                                 clip: true;
-                                background: #0f172a;
+                                background: editor_background;
 
                                 fs := FocusScope {
                                     x: 0; y: 0;
@@ -417,7 +429,7 @@ export component AppWindow inherits Window {
                         if (show_settings) : Rectangle {
                             background: #1e293b;
                             width: 320px;
-                            height: 300px;
+                            height: 420px;
                             x: parent.width - 340px;
                             y: 10px;
                             border-radius: 8px;
@@ -434,7 +446,7 @@ export component AppWindow inherits Window {
                                         value: font_size;
                                         minimum: 8;
                                         maximum: 72;
-                                        edited(val) => { font_size = val; settings_changed(font_size, use_word_wrap, font_family); }
+                                        edited(val) => { font_size = val; settings_changed(font_size, use_word_wrap, font_family, license_key, current_theme); }
                                     }
                                 }
                                 HorizontalBox {
@@ -442,7 +454,7 @@ export component AppWindow inherits Window {
                                     Text { text: "Word Wrap:"; color: #94a3b8; vertical-alignment: center; }
                                     CheckBox {
                                         checked: use_word_wrap;
-                                        toggled => { use_word_wrap = !use_word_wrap; settings_changed(font_size, use_word_wrap, font_family); }
+                                        toggled => { use_word_wrap = !use_word_wrap; settings_changed(font_size, use_word_wrap, font_family, license_key, current_theme); }
                                     }
                                 }
                                 HorizontalBox {
@@ -453,11 +465,103 @@ export component AppWindow inherits Window {
                                         current-value: font_family;
                                         selected(val) => {
                                             font_family = val;
-                                            settings_changed(font_size, use_word_wrap, font_family);
+                                            settings_changed(font_size, use_word_wrap, font_family, license_key, current_theme);
                                         }
                                     }
                                 }
+                                HorizontalBox {
+                                    spacing: 10px;
+                                    Text { text: "Theme:"; color: #94a3b8; vertical-alignment: center; }
+                                    ComboBox {
+                                        model: ["Sovereign Slate", "Sovereign Night", "Temple"];
+                                        current-value: current_theme;
+                                        selected(val) => {
+                                            if ((val == "Sovereign Night" || val == "Temple") && license_type == "Core") {
+                                                self.current-value = "Sovereign Slate";
+                                                show_license_dialog = true;
+                                            } else {
+                                                current_theme = val;
+                                                settings_changed(font_size, use_word_wrap, font_family, license_key, current_theme);
+                                            }
+                                        }
+                                    }
+                                }
+                                Rectangle { height: 1px; background: #334155; }
+                                HorizontalBox {
+                                    spacing: 10px;
+                                    Text { text: "License:"; color: #94a3b8; vertical-alignment: center; }
+                                    Text {
+                                        text: license_type == "Pro" ? "Pro Active 💎" : "Core (Free)";
+                                        color: license_type == "Pro" ? #38bdf8 : #f87171;
+                                        vertical-alignment: center;
+                                        font-weight: 700;
+                                    }
+                                }
+                                if (license_type != "Pro") : Button {
+                                    text: "Activate Pro License";
+                                    clicked => { show_license_dialog = true; }
+                                }
                                 Button { text: "Close"; clicked => { show_settings = false; } }
+                            }
+                        }
+
+                        if (show_license_dialog) : Rectangle {
+                            background: #1e293b;
+                            border-radius: 8px;
+                            border-width: 1px;
+                            border-color: #334155;
+                            width: 380px;
+                            height: 220px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            
+                            VerticalBox {
+                                padding: 20px;
+                                spacing: 14px;
+                                Text { text: "Activate Glyph Pro"; color: #f1f5f9; font-size: 16px; font-weight: 700; }
+                                Text { 
+                                    text: "Enter your Glyph Pro key (starts with GLYPH-PRO-) to unlock premium themes."; 
+                                    color: #94a3b8; 
+                                    font-size: 11px; 
+                                    wrap: word-wrap;
+                                }
+                                
+                                license_input := LineEdit {
+                                    placeholder-text: "GLYPH-PRO-XXXX-XXXX";
+                                    text: license_input_text;
+                                    edited(val) => { license_input_text = val; }
+                                }
+                                
+                                if (license_error != "") : Text {
+                                    text: license_error;
+                                    color: #ef4444;
+                                    font-size: 11px;
+                                }
+                                
+                                HorizontalBox {
+                                    spacing: 10px;
+                                    Button { 
+                                        text: "Activate"; 
+                                        clicked => {
+                                            if (root.validate_license(license_input_text)) {
+                                                license_key = license_input_text;
+                                                license_type = "Pro";
+                                                show_license_dialog = false;
+                                                license_error = "";
+                                                settings_changed(font_size, use_word_wrap, font_family, license_key, current_theme);
+                                            } else {
+                                                license_error = "Invalid license format. Must start with GLYPH-PRO-";
+                                            }
+                                        }
+                                    }
+                                    Button { 
+                                        text: "Cancel"; 
+                                        clicked => { 
+                                            show_license_dialog = false; 
+                                            license_error = "";
+                                        } 
+                                    }
+                                }
                             }
                         }
 

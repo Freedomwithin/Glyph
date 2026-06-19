@@ -26,6 +26,18 @@ struct Settings {
     font_size: i32,
     word_wrap: bool,
     font_family: String,
+    #[serde(default)]
+    license_key: String,
+    #[serde(default = "default_theme")]
+    current_theme: String,
+    #[serde(default)]
+    session_files: Vec<String>,
+    #[serde(default)]
+    session_active_idx: usize,
+}
+
+fn default_theme() -> String {
+    "Sovereign Slate".to_string()
 }
 
 impl Default for Settings {
@@ -34,6 +46,10 @@ impl Default for Settings {
             font_size: 14,
             word_wrap: false,
             font_family: "DejaVu Sans Mono".to_string(),
+            license_key: String::new(),
+            current_theme: default_theme(),
+            session_files: Vec::new(),
+            session_active_idx: 0,
         }
     }
 }
@@ -351,13 +367,30 @@ struct ProjectHub {
 impl ProjectHub {
     fn new() -> Self {
         let root = fs::canonicalize(".").map(|p| p.to_string_lossy().to_string()).unwrap_or(".".to_string());
+        let settings = Settings::load();
+        let is_pro = settings.license_key.starts_with("GLYPH-PRO-");
+
+        // Pro-only: restore last session files
+        let (editors, active_idx) = if is_pro && !settings.session_files.is_empty() {
+            let mut eds: Vec<Editor> = settings.session_files.iter().filter_map(|path| {
+                fs::read_to_string(path).ok().map(|content| Editor::new(content, Some(path.clone())))
+            }).collect();
+            if eds.is_empty() {
+                eds.push(Editor::new("Welcome to Glyph Hub.\n\nStart typing here...".to_string(), None));
+            }
+            let idx = settings.session_active_idx.min(eds.len().saturating_sub(1));
+            (eds, idx)
+        } else {
+            (vec![Editor::new("Welcome to Glyph Hub.\n\nStart typing here...".to_string(), None)], 0)
+        };
+
         Self {
-            editors: vec![Editor::new("Welcome to Glyph Hub.\n\nStart typing here...".to_string(), None)],
-            active_idx: 0,
+            editors,
+            active_idx,
             search_results: Vec::new(),
             cursor_visible: true,
-            settings: Settings::load(),
             project_root: root,
+            settings,
         }
     }
     fn active(&mut self) -> &mut Editor { &mut self.editors[self.active_idx] }
@@ -395,19 +428,32 @@ impl ProjectHub {
     fn open_file(&mut self, path: String) {
         if let Some(idx) = self.editors.iter().position(|e| e.path.as_deref() == Some(&path)) {
             self.active_idx = idx;
+            self.save_session();
             return;
         }
         if let Ok(content) = fs::read_to_string(&path) {
             self.detect_root(&path);
             self.editors.push(Editor::new(content, Some(path)));
             self.active_idx = self.editors.len() - 1;
+            self.save_session();
         }
+    }
+
+    fn save_session(&mut self) {
+        let is_pro = self.settings.license_key.starts_with("GLYPH-PRO-");
+        if !is_pro { return; }
+        self.settings.session_files = self.editors.iter()
+            .filter_map(|e| e.path.clone())
+            .collect();
+        self.settings.session_active_idx = self.active_idx;
+        self.settings.save();
     }
 
     fn close_tab(&mut self, idx: usize) {
         if self.editors.len() <= 1 {
             self.editors[0] = Editor::new(String::new(), None);
             self.active_idx = 0;
+            self.save_session();
             return;
         }
         self.editors.remove(idx);
@@ -416,6 +462,7 @@ impl ProjectHub {
         } else if self.active_idx > idx {
             self.active_idx -= 1;
         }
+        self.save_session();
     }
 
     fn search(&mut self, query: &str) {
@@ -457,6 +504,9 @@ fn main() -> anyhow::Result<()> {
             let fs_val = h.settings.font_size;
             let ff_val = h.settings.font_family.clone();
             let ww_val = h.settings.word_wrap;
+            let l_key = h.settings.license_key.clone();
+            let l_type = if l_key.starts_with("GLYPH-PRO-") { "Pro" } else { "Core" };
+            let c_theme = if h.settings.current_theme.is_empty() { "Sovereign Slate".to_string() } else { h.settings.current_theme.clone() };
             let cursor_visible = h.cursor_visible;
             
             let (line_numbers, status_text, cursor_row, cursor_col,
@@ -516,6 +566,9 @@ fn main() -> anyhow::Result<()> {
             $ui.set_font_size(fs_val);
             $ui.set_font_family(ff_val.into());
             $ui.set_use_word_wrap(ww_val);
+            $ui.set_license_key(l_key.into());
+            $ui.set_license_type(l_type.into());
+            $ui.set_current_theme(c_theme.into());
             $ui.set_editor_image(render_res.image);
             $ui.set_line_numbers(Rc::new(slint::VecModel::from(line_numbers)).into());
             $ui.set_status_text(status_text.into());
@@ -767,12 +820,14 @@ fn main() -> anyhow::Result<()> {
         let hub_r = hub.clone();
         let rend = renderer.clone();
         let cs = canvas_size.clone();
-        ui.on_settings_changed(move |font_size, use_word_wrap, font_family| {
+        ui.on_settings_changed(move |font_size, use_word_wrap, font_family, license_key, current_theme| {
             if let Some(ui) = ui_w.upgrade() {
                 let mut h = hub_r.borrow_mut();
                 h.settings.font_size = font_size;
                 h.settings.word_wrap = use_word_wrap;
                 h.settings.font_family = font_family.to_string();
+                h.settings.license_key = license_key.to_string();
+                h.settings.current_theme = current_theme.to_string();
                 h.settings.save();
                 drop(h);
                 sync_ui!(ui, hub_r, rend, cs);
@@ -785,6 +840,10 @@ fn main() -> anyhow::Result<()> {
             "exit" => std::process::exit(0),
             _ => {}
         }
+    });
+
+    ui.on_validate_license(|key| {
+        key.starts_with("GLYPH-PRO-")
     });
 
     sync_ui!(ui, hub, renderer, canvas_size);
