@@ -8,11 +8,23 @@ settings.json
 .DS_Store
 .vscode/
 
+# AppImage builds (host on Releases)  # <-- NEW
+*.AppImage
+
 # Dependency caches
 # Cargo
-Cargo.lock
+# Cargo.lock
 # Rust-analyzer
 .rust-analyzer/
+
+# Build artifacts  # <-- NEW
+*.o
+*.so
+*.dylib
+*.a
+*.exe
+*.pdb
+*.rlib
 
 # OS Specific
 .lock-waf_
@@ -44,3 +56,16 @@ venv/
 # Windows
 Thumbs.db
 ehthumbs.db
+
+# Code coverage & profiling  # <-- NEW
+*.gcda
+*.gcno
+*.prof
+*.profraw
+*.svg
+
+# Debug  # <-- NEW
+*.out
+*.pid
+*.lock*.AppImage
+binary

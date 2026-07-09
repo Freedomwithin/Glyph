@@ -1,8 +1,8 @@
 mod buffer;
 
-use buffer::piece_table::PieceTable;
-use buffer::highlighter::Highlighter;
-use buffer::renderer::{ColoredSpan, GlyphRenderer};
+// ✨ Streamlined single-line import using your new mod.rs re-exports
+use buffer::{PieceTable, Highlighter, renderer::ColoredSpan, GlyphRenderer};
+
 use slint::ComponentHandle;
 use slint::SharedString;
 use std::rc::Rc;
@@ -26,19 +26,36 @@ struct Settings {
     font_size: i32,
     word_wrap: bool,
     font_family: String,
+    
+    #[serde(default = "default_sidebar_width")]
+    sidebar_width: f32,
+    
     #[serde(default)]
     license_key: String,
+    
     #[serde(default = "default_theme")]
     current_theme: String,
+
+    // ✨ Added for Maya's state tracking features
     #[serde(default)]
-    session_files: Vec<String>,
+    pub session_files: Vec<String>,
+
     #[serde(default)]
-    session_active_idx: usize,
+    pub session_active_idx: usize,
+
+    #[serde(default)]
+    pub sidebar_collapsed: bool,
+
+    // ✨ Persist line‑numbers setting
+    #[serde(default = "default_true")]
+    pub show_line_numbers: bool,
 }
 
-fn default_theme() -> String {
-    "Sovereign Slate".to_string()
-}
+fn default_true() -> bool { true }
+
+// Helper allocation factories for Serde field defaults
+fn default_sidebar_width() -> f32 { 440.0 }   // 👈 matches the new default
+fn default_theme() -> String { "dark".to_string() }
 
 impl Default for Settings {
     fn default() -> Self {
@@ -46,10 +63,13 @@ impl Default for Settings {
             font_size: 14,
             word_wrap: false,
             font_family: "DejaVu Sans Mono".to_string(),
+            sidebar_width: 440.0,                // 👈 larger default
             license_key: String::new(),
-            current_theme: default_theme(),
+            current_theme: "dark".to_string(),
             session_files: Vec::new(),
             session_active_idx: 0,
+            sidebar_collapsed: false,
+            show_line_numbers: true,
         }
     }
 }
@@ -271,30 +291,14 @@ impl Editor {
         }
     }
 
-    fn click(&mut self, x: f32, y: f32, font_size: i32) {
-        let char_w = font_size as f32 * CHAR_WIDTH_FACTOR;
-        let char_h = font_size as f32 * CHAR_HEIGHT_FACTOR;
-        let target_line = ((y - EDITOR_PAD) / char_h).max(0.0) as usize + self.scroll_offset;
-        let target_col  = ((x - EDITOR_PAD) / char_w).max(0.0).round() as usize;
-        let lines = self.lines();
-        if lines.is_empty() { return; }
-        let line_idx = target_line.min(lines.len() - 1);
-        let col_idx  = target_col.min(lines[line_idx].chars().count());
-        self.cursor_pos = self.line_start(line_idx) + col_idx;
+    fn click(&mut self, cursor_pos: usize) {
+        self.cursor_pos = cursor_pos;
         self.selection_anchor = None;
     }
 
-    fn drag(&mut self, x: f32, y: f32, font_size: i32) {
+    fn drag(&mut self, cursor_pos: usize) {
         if self.selection_anchor.is_none() { self.selection_anchor = Some(self.cursor_pos); }
-        let char_w = font_size as f32 * CHAR_WIDTH_FACTOR;
-        let char_h = font_size as f32 * CHAR_HEIGHT_FACTOR;
-        let target_line = ((y - EDITOR_PAD) / char_h).max(0.0) as usize + self.scroll_offset;
-        let target_col  = ((x - EDITOR_PAD) / char_w).max(0.0).round() as usize;
-        let lines = self.lines();
-        if lines.is_empty() { return; }
-        let line_idx = target_line.min(lines.len() - 1);
-        let col_idx  = target_col.min(lines[line_idx].chars().count());
-        self.cursor_pos = self.line_start(line_idx) + col_idx;
+        self.cursor_pos = cursor_pos;
     }
 
     fn anchor_if_shift(&mut self, shift: bool) {
@@ -368,7 +372,7 @@ impl ProjectHub {
     fn new() -> Self {
         let root = fs::canonicalize(".").map(|p| p.to_string_lossy().to_string()).unwrap_or(".".to_string());
         let settings = Settings::load();
-        let is_pro = settings.license_key.starts_with("GLYPH-PRO-");
+        let is_pro = true; // 👈 temporarily unlock all Pro features
 
         // Pro-only: restore last session files
         let (editors, active_idx) = if is_pro && !settings.session_files.is_empty() {
@@ -426,6 +430,14 @@ impl ProjectHub {
     }
 
     fn open_file(&mut self, path: String) {
+        let p = Path::new(&path);
+        if p.is_dir() {
+            // Navigate into the directory
+            self.project_root = path;
+            self.settings.save();
+            return;
+        }
+
         if let Some(idx) = self.editors.iter().position(|e| e.path.as_deref() == Some(&path)) {
             self.active_idx = idx;
             self.save_session();
@@ -439,9 +451,8 @@ impl ProjectHub {
         }
     }
 
-    fn save_session(&mut self) {
-        let is_pro = self.settings.license_key.starts_with("GLYPH-PRO-");
-        if !is_pro { return; }
+     fn save_session(&mut self) {
+        // Always save session (Pro feature made free)
         self.settings.session_files = self.editors.iter()
             .filter_map(|e| e.path.clone())
             .collect();
@@ -493,6 +504,7 @@ fn sel_range(a: usize, b: usize) -> (usize, usize) { if a < b { (a, b) } else { 
 
 fn main() -> anyhow::Result<()> {
     let ui = AppWindow::new()?;
+    ui.window().set_maximized(true);
     let hub = Rc::new(RefCell::new(ProjectHub::new()));
     let canvas_size = Rc::new(RefCell::new((1136u32, 768u32)));
     let renderer = Rc::new(RefCell::new(GlyphRenderer::new()));
@@ -508,6 +520,8 @@ fn main() -> anyhow::Result<()> {
             let l_type = if l_key.starts_with("GLYPH-PRO-") { "Pro" } else { "Core" };
             let c_theme = if h.settings.current_theme.is_empty() { "Sovereign Slate".to_string() } else { h.settings.current_theme.clone() };
             let cursor_visible = h.cursor_visible;
+            let sb_collapsed = h.settings.sidebar_collapsed;
+            
             
             let (line_numbers, status_text, cursor_row, cursor_col,
                  selection, colored_lines, cached_text, scroll_offset) = {
@@ -544,6 +558,8 @@ fn main() -> anyhow::Result<()> {
                 });
             }
 
+            let sidebar_width_val = h.settings.sidebar_width;
+            let show_line_numbers_val = h.settings.show_line_numbers;
             let search_results = h.search_results.clone();
             let project_root_shared = h.project_root.clone();
             drop(h);
@@ -566,6 +582,9 @@ fn main() -> anyhow::Result<()> {
             $ui.set_font_size(fs_val);
             $ui.set_font_family(ff_val.into());
             $ui.set_use_word_wrap(ww_val);
+            $ui.set_sidebar_collapsed(sb_collapsed);
+            $ui.set_sidebar_width(sidebar_width_val as _);
+            $ui.set_show_line_numbers(show_line_numbers_val);
             $ui.set_license_key(l_key.into());
             $ui.set_license_type(l_type.into());
             $ui.set_current_theme(c_theme.into());
@@ -636,7 +655,9 @@ fn main() -> anyhow::Result<()> {
         ui.on_mouse_pressed(move |x, y| {
             let Some(ui) = ui_w.upgrade() else { return };
             let fs_val = hub_r.borrow().settings.font_size;
-            hub_r.borrow_mut().active().click(x, y, fs_val);
+            let text = hub_r.borrow().editors[hub_r.borrow().active_idx].cached_text.clone();
+            let pos = rend.borrow().get_position_at(x, y, fs_val as f32, &text);
+            hub_r.borrow_mut().active().click(pos);
             sync_ui!(ui, hub_r, rend, cs);
         });
         let ui_w2 = ui.as_weak();
@@ -646,7 +667,9 @@ fn main() -> anyhow::Result<()> {
         ui.on_mouse_dragged(move |x, y| {
             let Some(ui) = ui_w2.upgrade() else { return };
             let fs_val = hub_r2.borrow().settings.font_size;
-            hub_r2.borrow_mut().active().drag(x, y, fs_val);
+            let text = hub_r2.borrow().editors[hub_r2.borrow().active_idx].cached_text.clone();
+            let pos = rend2.borrow().get_position_at(x, y, fs_val as f32, &text);
+            hub_r2.borrow_mut().active().drag(pos);
             sync_ui!(ui, hub_r2, rend2, cs2);
         });
         let ui_w3 = ui.as_weak();
@@ -657,6 +680,32 @@ fn main() -> anyhow::Result<()> {
             let Some(ui) = ui_w3.upgrade() else { return };
             hub_r3.borrow_mut().active().scroll(dy);
             sync_ui!(ui, hub_r3, rend3, cs3);
+        });
+        let _ui_w = ui.as_weak();
+        let _ui_w_width = ui.as_weak();
+        let hub_r_width = hub.clone();
+
+        ui.on_sidebar_width_changed(move |width| {
+            let mut h = hub_r_width.borrow_mut();
+            h.settings.sidebar_width = width as f32;
+            h.settings.save();
+        });
+
+        let ui_w_collapse = ui.as_weak();
+        let hub_r_collapse = hub.clone();
+        let rend_collapse = renderer.clone();
+        let cs_collapse = canvas_size.clone();
+
+        ui.on_sidebar_collapsed_changed(move |collapsed| {
+            {
+                let mut h = hub_r_collapse.borrow_mut();
+                h.settings.sidebar_collapsed = collapsed;
+                h.settings.save();
+            } // 🔑 `h` is dropped here, releasing the borrow
+
+            if let Some(ui) = ui_w_collapse.upgrade() {
+                sync_ui!(ui, hub_r_collapse, rend_collapse, cs_collapse);
+            }
         });
     }
 
@@ -766,7 +815,8 @@ fn main() -> anyhow::Result<()> {
                 let mut pos = 0;
                 for (i, line_text) in text.split('\n').enumerate() {
                     if i >= (line - 1) as usize { break; }
-                    pos += line_text.chars().count() + 1;
+                    // Changed to .len() to count raw bytes for cursor_pos
+                    pos += line_text.len() + 1;
                 }
                 h.active().cursor_pos = pos;
                 drop(h);
@@ -820,14 +870,17 @@ fn main() -> anyhow::Result<()> {
         let hub_r = hub.clone();
         let rend = renderer.clone();
         let cs = canvas_size.clone();
-        ui.on_settings_changed(move |font_size, use_word_wrap, font_family, license_key, current_theme| {
+        
+        ui.on_settings_changed(move |font_size, use_word_wrap, show_line_numbers, font_family, license_key, current_theme| {
             if let Some(ui) = ui_w.upgrade() {
                 let mut h = hub_r.borrow_mut();
                 h.settings.font_size = font_size;
                 h.settings.word_wrap = use_word_wrap;
+                h.settings.show_line_numbers = show_line_numbers;   // 👈 save line‑numbers setting
                 h.settings.font_family = font_family.to_string();
                 h.settings.license_key = license_key.to_string();
                 h.settings.current_theme = current_theme.to_string();
+                
                 h.settings.save();
                 drop(h);
                 sync_ui!(ui, hub_r, rend, cs);
@@ -841,6 +894,7 @@ fn main() -> anyhow::Result<()> {
             _ => {}
         }
     });
+        
 
     ui.on_validate_license(|key| {
         key.starts_with("GLYPH-PRO-")

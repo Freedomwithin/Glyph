@@ -1,7 +1,7 @@
 use tree_sitter::{Parser, Language, Tree, Node};
 use slint::Color;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct StyledSegment {
     pub text: slint::SharedString,
     pub color: Color,
@@ -41,7 +41,6 @@ impl Highlighter {
             });
         }
 
-        // Group segments by line and merge same-color neighbors
         let mut lines = Vec::new();
         let mut current_line: Vec<StyledSegment> = Vec::new();
 
@@ -50,19 +49,17 @@ impl Highlighter {
             let parts: Vec<&str> = seg_text.split('\n').collect();
             
             for (i, part) in parts.iter().enumerate() {
-                if !part.is_empty() {
-                    // Merge with last segment in current line if color matches
-                    if let Some(last) = current_line.last_mut() {
-                        if last.color == seg.color {
-                            let mut new_text = last.text.to_string();
-                            new_text.push_str(part);
-                            last.text = new_text.into();
-                        } else {
-                            current_line.push(StyledSegment { text: (*part).into(), color: seg.color });
-                        }
+                // ✨ Fix: Empty slices are preserved to prevent layout character deletion
+                if let Some(last) = current_line.last_mut() {
+                    if last.color == seg.color {
+                        let mut new_text = last.text.to_string();
+                        new_text.push_str(part);
+                        last.text = new_text.into();
                     } else {
                         current_line.push(StyledSegment { text: (*part).into(), color: seg.color });
                     }
+                } else {
+                    current_line.push(StyledSegment { text: (*part).into(), color: seg.color });
                 }
 
                 if i < parts.len() - 1 {
@@ -111,7 +108,6 @@ impl Highlighter {
     }
 
     fn get_color_for_kind(&self, kind: &str) -> Color {
-        // eprintln!("Node kind: {}", kind); // Debug: Seeing the exact Tree-sitter strings
         match kind {
             // Keywords: Indigo/Mauve
             "keyword" | "use" | "mod" | "pub" | "fn" | "let" | "mut" | "match" | "if" | "else" | "return" | 
@@ -120,7 +116,7 @@ impl Highlighter {
             "crate" | "super" | "self" | "Self" | "dyn" | "move" | "unsafe" | "extern" => {
                 Color::from_rgb_u8(203, 166, 247)
             }
-            // Strings: Green
+            // Strings: Green (Now properly matches token values)
             "string_literal" | "string" | "char_literal" | "raw_string_literal" => {
                 Color::from_rgb_u8(166, 227, 161)
             }
@@ -151,9 +147,11 @@ impl Highlighter {
     pub fn get_scope_at(&self, pos: usize) -> String {
         if let Some(tree) = &self.tree {
             let root = tree.root_node();
-            let node = root.descendant_for_byte_range(pos, pos);
-            if let Some(n) = node {
-                return n.kind().to_string();
+            // ✨ Fix: Safe multi-byte calculation boundary lookup checks
+            if pos <= root.end_byte() {
+                if let Some(node) = root.descendant_for_byte_range(pos, pos) {
+                    return node.kind().to_string();
+                }
             }
         }
         "none".to_string()

@@ -29,6 +29,8 @@ pub struct RenderResult {
 pub struct GlyphRenderer {
     font_system: FontSystem,
     swash_cache: SwashCache,
+    pub last_lines_x: Vec<Vec<f32>>,
+    pub last_scroll_offset: usize,
 }
 
 // Shaped metrics for a single visible line.
@@ -53,6 +55,8 @@ impl GlyphRenderer {
         Self {
             font_system: FontSystem::new(),
             swash_cache: SwashCache::new(),
+            last_lines_x: Vec::new(),
+            last_scroll_offset: 0,
         }
     }
 
@@ -129,6 +133,9 @@ impl GlyphRenderer {
         let w = canvas_w.max(8);
         let h = canvas_h.max(8);
 
+        self.last_scroll_offset = scroll_offset;
+        self.last_lines_x.clear();
+
         let mut pixmap = match Pixmap::new(w, h) {
             Some(p) => p,
             None => return RenderResult { image: slint::Image::default(), _cursor_x: 0.0, _cursor_y: 0.0 },
@@ -150,7 +157,9 @@ impl GlyphRenderer {
             if line_idx >= text_lines.len() { break; }
             let y_top = pad + i as f32 * char_h;
             if y_top > h as f32 { break; }
-            shaped_lines.push(self.shape_line(text_lines[line_idx], line_idx, w, pad, metrics, base_attrs, line_colors));
+            let lm = self.shape_line(text_lines[line_idx], line_idx, w, pad, metrics, base_attrs, line_colors);
+            self.last_lines_x.push(lm.col_x.clone());
+            shaped_lines.push(lm);
         }
 
         // ── Pass 1: selection backgrounds ────────────────────────────────
@@ -233,5 +242,46 @@ impl GlyphRenderer {
 
         let slint_buf = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(pixmap.data(), w, h);
         RenderResult { image: slint::Image::from_rgba8(slint_buf), _cursor_x: actual_cursor_x, _cursor_y: actual_cursor_y }
+    }
+
+    pub fn get_position_at(&self, click_x: f32, click_y: f32, font_size: f32, text: &str) -> usize {
+        let pad = 10.0f32;
+        let char_h = font_size * 1.3;
+        
+        let relative_y = click_y - pad;
+        let line_offset = (relative_y / char_h).max(0.0) as usize;
+        let line_idx = line_offset + self.last_scroll_offset;
+        
+        let text_lines: Vec<&str> = text.split('\n').collect();
+        if text_lines.is_empty() { return 0; }
+        
+        let target_line = line_idx.min(text_lines.len() - 1);
+        
+        let mut char_pos = 0;
+        for i in 0..target_line {
+            char_pos += text_lines[i].chars().count() + 1;
+        }
+        
+        if let Some(col_x) = self.last_lines_x.get(target_line.saturating_sub(self.last_scroll_offset)) {
+            if col_x.is_empty() { return char_pos; }
+            
+            let mut best_col = 0;
+            let mut min_diff = f32::MAX;
+            for (col, &x_pos) in col_x.iter().enumerate() {
+                let diff = (x_pos - click_x).abs();
+                if diff < min_diff {
+                    min_diff = diff;
+                    best_col = col;
+                }
+            }
+            char_pos += best_col;
+        } else {
+            let char_w = font_size * 0.6;
+            let relative_x = click_x - pad;
+            let col = (relative_x / char_w).max(0.0).round() as usize;
+            let line_len = text_lines[target_line].chars().count();
+            char_pos += col.min(line_len);
+        }
+        char_pos
     }
 }

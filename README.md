@@ -1,6 +1,10 @@
 # Glyph - High-Performance Text Editor
 
 Glyph is a high-performance, native text editor built in Rust. It uses a custom pixel-buffer rendering engine to deliver a zero-latency editing experience without the overhead of Electron or browser-based UI frameworks.
+[![Rust](https://img.shields.io/badge/Rust-1.80+-orange.svg)](https://www.rust-lang.org/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Linux](https://img.shields.io/badge/Linux-supported-green.svg)](https://github.com/Freedomwithin/Glyph)
+[![Windows](https://img.shields.io/badge/Windows-supported-blue.svg)](https://github.com/Freedomwithin/Glyph)
 
 ## Technical Architecture
 
@@ -27,15 +31,15 @@ Project-wide file search is built in and optimized for speed, enabling rapid nav
 - Project-wide search
 - Native OS file dialogs
 - Native window management
-
-### Pro
+- Sidebar file tree – browse folders, collapse/expand the sidebar, and save your layout preferences (width and collapse state)
+- Persistent settings – font size, font family, word wrap, line numbers, sidebar width, and collapse state are saved automatically.
 - Pro themes (Sovereign Night, Temple)
 - Session restore: reopen your last set of files automatically on launch
 - Additional Pro features in development
 
 ## Licensing
 
-Glyph Core is free. A Pro license key (format: `GLYPH-PRO-XXXX-XXXX`) unlocks Pro features via the Settings panel. Activation is persistent and stored locally.
+Glyph is currently free for all users. A future Pro tier may offer additional features. For now, all themes and session restore are unlocked.
 
 ## Keybindings
 

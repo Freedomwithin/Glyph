@@ -72,8 +72,9 @@ impl PieceTable {
             return;
         }
 
-        self.split_at(char_idx);
+        // ✨ Fix: Split right-to-left to protect array index allocations
         self.split_at(char_idx + length);
+        self.split_at(char_idx);
 
         let mut current_chars = 0;
         let mut start_idx = None;
@@ -145,6 +146,14 @@ impl PieceTable {
 mod tests {
     use super::*;
 
+    // Added tests to catch the sequential mutation structural drift bug
+    #[test]
+    fn test_mid_buffer_delete() {
+        let mut pt = PieceTable::new("abcdef".to_string());
+        pt.delete(2, 2); // delete "cd"
+        assert_eq!(pt.get_text(), "abef");
+    }
+
     #[test]
     fn test_insert_unicode() {
         let mut pt = PieceTable::new("hello".to_string());
@@ -155,7 +164,7 @@ mod tests {
     #[test]
     fn test_delete_unicode() {
         let mut pt = PieceTable::new("hello 🌍".to_string());
-        pt.delete(6, 1); // delete 🌍
+        pt.delete(6, 1); 
         assert_eq!(pt.get_text(), "hello ");
     }
 }
