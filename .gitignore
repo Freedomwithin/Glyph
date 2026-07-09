@@ -69,3 +69,7 @@ ehthumbs.db
 *.pid
 *.lock*.AppImage
 binary
+
+# AppDir compiled binary (upload via Releases only)
+packaging/AppDir/usr/bin/
+
